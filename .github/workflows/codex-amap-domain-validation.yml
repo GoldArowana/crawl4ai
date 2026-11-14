@@ -39,9 +39,17 @@ jobs:
       - name: Prove real-package base failure
         working-directory: baseline
         run: |
-          python -c "import crawl4ai; print('BASE_IMPORT', crawl4ai.__file__); assert '/baseline/crawl4ai/' in crawl4ai.__file__"
+          mkdir "$RUNNER_TEMP/base-regression"
+          cp ../source/tests/test_amap_domain_config.py "$RUNNER_TEMP/base-regression/"
+          cmp ../source/tests/test_amap_domain_config.py "$RUNNER_TEMP/base-regression/test_amap_domain_config.py"
           set +e
-          PYTHONPATH="$PWD" python -m pytest ../source/tests/test_amap_domain_config.py -q --junitxml="$RUNNER_TEMP/base.xml"
+          PYTHONPATH="$PWD" python - <<'PYTEST'
+          import crawl4ai, os, pytest
+          print("BASE_PYTEST_IMPORT", crawl4ai.__file__)
+          assert "/baseline/crawl4ai/" in crawl4ai.__file__
+          temp = os.environ["RUNNER_TEMP"]
+          raise SystemExit(pytest.main([temp + "/base-regression/test_amap_domain_config.py", "-q", "--import-mode=importlib", "--confcutdir=" + temp + "/base-regression", "--junitxml=" + temp + "/base.xml"]))
+          PYTEST
           rc=$?
           set -e
           test "$rc" = 1
