@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: GoldArowana/crawl4ai
-          ref: eaac70f1842a6a6b73dd53391376f89cc6155cae
+          ref: 4c09792296344570909eab2601e6aba98736baf7
           path: source
           persist-credentials: false
       - uses: actions/checkout@v4
@@ -29,8 +29,8 @@ jobs:
           python-version: '3.12'
       - name: Assert exact source and base
         run: |
-          test "$(git -C source rev-parse HEAD)" = eaac70f1842a6a6b73dd53391376f89cc6155cae
-          test "$(git -C source rev-parse HEAD^{tree})" = a3f7a183116093043883e60405de29174ea27f6a
+          test "$(git -C source rev-parse HEAD)" = 4c09792296344570909eab2601e6aba98736baf7
+          test "$(git -C source rev-parse HEAD^{tree})" = 8070e235258396451fc70178540e56723cb9d365
           test "$(git -C baseline rev-parse HEAD)" = 2c0b9e9cc6a7918314fe53a63693d1c2c6115f5a
           git -C source diff HEAD --exit-code
           git -C baseline diff HEAD --exit-code
@@ -60,7 +60,7 @@ jobs:
         run: |
           python -c "import crawl4ai; print('HEAD_IMPORT',crawl4ai.__file__); assert '/source/crawl4ai/' in crawl4ai.__file__"
           python -m pytest tests/test_amap_domain_config.py tests/regression/test_reg_domain_mapper.py -m 'not network' -q
-          python -m black --check tests/test_amap_domain_config.py
+          python -m black --check --diff tests/test_amap_domain_config.py
           python -m compileall -q crawl4ai/async_webcrawler.py tests/test_amap_domain_config.py
           git diff HEAD --exit-code
       - name: Execute independently authored public-call controls
@@ -68,7 +68,7 @@ jobs:
       - name: Always assert source stayed clean
         if: always()
         run: |
-          test "$(git -C source rev-parse HEAD)" = eaac70f1842a6a6b73dd53391376f89cc6155cae
-          test "$(git -C source rev-parse HEAD^{tree})" = a3f7a183116093043883e60405de29174ea27f6a
+          test "$(git -C source rev-parse HEAD)" = 4c09792296344570909eab2601e6aba98736baf7
+          test "$(git -C source rev-parse HEAD^{tree})" = 8070e235258396451fc70178540e56723cb9d365
           git -C source diff HEAD --exit-code
           git -C baseline diff HEAD --exit-code
