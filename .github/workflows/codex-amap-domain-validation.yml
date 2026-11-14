@@ -1,0 +1,66 @@
+name: Codex domain mapper exact-source validation
+on:
+  push:
+    branches: [validation/amap-domain-config-fafe3fc6]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: GoldArowana/crawl4ai
+          ref: eaac70f1842a6a6b73dd53391376f89cc6155cae
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: GoldArowana/crawl4ai
+          ref: 2c0b9e9cc6a7918314fe53a63693d1c2c6115f5a
+          path: baseline
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Assert exact source and base
+        run: |
+          test "$(git -C source rev-parse HEAD)" = eaac70f1842a6a6b73dd53391376f89cc6155cae
+          test "$(git -C source rev-parse HEAD^{tree})" = a3f7a183116093043883e60405de29174ea27f6a
+          test "$(git -C baseline rev-parse HEAD)" = 2c0b9e9cc6a7918314fe53a63693d1c2c6115f5a
+          git -C source diff HEAD --exit-code
+          git -C baseline diff HEAD --exit-code
+      - name: Install declared package and test dependencies
+        run: python -m pip install -e ./source pytest pytest-asyncio black
+      - name: Prove real-package base failure
+        working-directory: baseline
+        run: |
+          python -c "import crawl4ai; print('BASE_IMPORT', crawl4ai.__file__); assert '/baseline/crawl4ai/' in crawl4ai.__file__"
+          set +e
+          PYTHONPATH="$PWD" python -m pytest ../source/tests/test_amap_domain_config.py -q --junitxml="$RUNNER_TEMP/base.xml"
+          rc=$?
+          set -e
+          test "$rc" = 1
+          python -c "import xml.etree.ElementTree as E,os; r=E.parse(os.environ['RUNNER_TEMP']+'/base.xml'); c=r.findall('.//testcase'); f=[x for x in c if x.find('failure') is not None]; errors=r.findall('.//error'); print('BASE_COUNTS',len(c),len(f),len(errors)); assert len(c)==6 and len(f)==3 and not errors"
+          git diff HEAD --exit-code
+      - name: Test final source and existing offline mapper controls
+        working-directory: source
+        run: |
+          python -c "import crawl4ai; print('HEAD_IMPORT',crawl4ai.__file__); assert '/source/crawl4ai/' in crawl4ai.__file__"
+          python -m pytest tests/test_amap_domain_config.py tests/regression/test_reg_domain_mapper.py -m 'not network' -q
+          python -m black --check tests/test_amap_domain_config.py
+          python -m compileall -q crawl4ai/async_webcrawler.py tests/test_amap_domain_config.py
+          git diff HEAD --exit-code
+      - name: Execute independently authored public-call controls
+        run: python .codex-validation/independent_controls.py source
+      - name: Always assert source stayed clean
+        if: always()
+        run: |
+          test "$(git -C source rev-parse HEAD)" = eaac70f1842a6a6b73dd53391376f89cc6155cae
+          test "$(git -C source rev-parse HEAD^{tree})" = a3f7a183116093043883e60405de29174ea27f6a
+          git -C source diff HEAD --exit-code
+          git -C baseline diff HEAD --exit-code
