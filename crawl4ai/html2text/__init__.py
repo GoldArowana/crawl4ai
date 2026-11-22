@@ -206,6 +206,10 @@ class HTML2Text(html.parser.HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         self.handle_tag(tag, {}, start=False)
 
+    def _format_link_destination(self, href: str) -> str:
+        url = urlparse.urljoin(self.baseurl, href)
+        return f"<{url}>" if self.protect_links else url
+
     def previousIndex(self, attrs: Dict[str, Optional[str]]) -> Optional[int]:
         """
         :type attrs: dict
@@ -510,7 +514,7 @@ class HTML2Text(html.parser.HTMLParser):
             self.quote = not self.quote
 
         def link_url(self: HTML2Text, link: str, title: str = "") -> None:
-            url = urlparse.urljoin(self.baseurl, link)
+            url = self._format_link_destination(link)
             title = ' "{}"'.format(title) if title.strip() else ""
             self.o("]({url}{title})".format(url=escape_md(url), title=title))
 
@@ -528,8 +532,6 @@ class HTML2Text(html.parser.HTMLParser):
                     self.astack.append(attrs)
                     self.maybe_automatic_link = attrs["href"]
                     self.empty_link = True
-                    if self.protect_links:
-                        attrs["href"] = "<" + attrs["href"] + ">"
                 else:
                     self.astack.append(None)
             else:
@@ -888,7 +890,7 @@ class HTML2Text(html.parser.HTMLParser):
                             "   ["
                             + str(link.count)
                             + "]: "
-                            + urlparse.urljoin(self.baseurl, link.attrs["href"])
+                            + self._format_link_destination(link.attrs["href"])
                         )
                         if "title" in link.attrs and link.attrs["title"] is not None:
                             self.out(" (" + link.attrs["title"] + ")")

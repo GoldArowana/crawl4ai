@@ -8,7 +8,11 @@ import re
 from urllib.parse import urljoin
 
 # Pre-compile the regex pattern
-LINK_PATTERN = re.compile(r'!?\[((?:[^\[\]]|\[(?:[^\[\]]|\[[^\]]*\])*\])*)\]\(((?:[^()\s]|\([^()]*\))*)(?:\s+"([^"]*)")?\)')
+LINK_PATTERN = re.compile(
+    r"!?\[((?:[^\[\]]|\[(?:[^\[\]]|\[[^\]]*\])*\])*)\]\("
+    r"(?:<([^<>\r\n]*)>|((?:[^()\s]|\([^()]*\))*))"
+    r'(?:\s+"([^"]*)")?\)'
+)
 
 
 def fast_urljoin(base: str, url: str) -> str:
@@ -108,7 +112,8 @@ class DefaultMarkdownGenerator(MarkdownGenerationStrategy):
 
         for match in LINK_PATTERN.finditer(markdown):
             parts.append(markdown[last_end : match.start()])
-            text, url, title = match.groups()
+            text, protected_url, bare_url, title = match.groups()
+            url = protected_url if protected_url is not None else bare_url
 
             # Use cached URL if available, otherwise compute and cache
             if base_url and not url.startswith(("http://", "https://", "mailto:")):
