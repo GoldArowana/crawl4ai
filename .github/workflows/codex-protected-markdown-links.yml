@@ -1,0 +1,95 @@
+name: Codex protected Markdown link validation
+on:
+  push:
+    branches: [validation/protected-links-d3999bd7]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 3
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Assert source and test parents
+        run: |
+          test "$GITHUB_REPOSITORY" = GoldArowana/crawl4ai
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = 030556698d6a3bd855299d87fb7dd4a0b6620ba9
+          git worktree add --detach "$RUNNER_TEMP/head" 030556698d6a3bd855299d87fb7dd4a0b6620ba9
+          git worktree add --detach "$RUNNER_TEMP/base" 9b2e1e321abced7675cbb47ef5a03205c2dbc72d
+          test "$(git -C "$RUNNER_TEMP/head" rev-parse HEAD^{tree})" = 8e7e8b68b29808dd38fef90749485d6832d1274f
+          test "$(git -C "$RUNNER_TEMP/base" rev-parse HEAD^{tree})" = 92479e6ee24233d37833e31ec0b4245173ff3489
+          git -C "$RUNNER_TEMP/head" diff HEAD --exit-code
+          git -C "$RUNNER_TEMP/base" diff HEAD --exit-code
+          mkdir -p "$RUNNER_TEMP/crawl-runtime"
+          printf 'CRAWL4_AI_BASE_DIRECTORY=%s\n' "$RUNNER_TEMP/crawl-runtime" >> "$GITHUB_ENV"
+      - name: Install declared dependencies and test tools
+        run: |
+          python -m pip install -e "$RUNNER_TEMP/head" pytest pytest-asyncio black
+          python -m pip check
+          python --version
+          python -m pip freeze --exclude-editable
+      - name: Reproduce with the real base package
+        run: |
+          mkdir "$RUNNER_TEMP/regression"
+          cp "$RUNNER_TEMP/head/tests/test_markdown_protected_links.py" "$RUNNER_TEMP/regression/"
+          cmp "$RUNNER_TEMP/head/tests/test_markdown_protected_links.py" "$RUNNER_TEMP/regression/test_markdown_protected_links.py"
+          cd "$RUNNER_TEMP/base"
+          set +e
+          PYTHONPATH="$PWD" python - <<'PYTEST'
+          import crawl4ai, os, pytest
+          from pathlib import Path
+          temp = Path(os.environ["RUNNER_TEMP"])
+          origin = Path(crawl4ai.__file__).resolve()
+          print("BASE_PYTEST_IMPORT", origin, flush=True)
+          assert origin == temp / "base/crawl4ai/__init__.py"
+          raise SystemExit(pytest.main([
+              str(temp / "regression/test_markdown_protected_links.py"),
+              "-q", "--import-mode=importlib",
+              "--confcutdir=" + str(temp / "regression"),
+              "--junitxml=" + str(temp / "base.xml"),
+          ]))
+          PYTEST
+          rc=$?
+          set -e
+          test "$rc" = 1
+          python - <<'RESULTS'
+          import os, xml.etree.ElementTree as ET
+          from pathlib import Path
+          root = ET.parse(Path(os.environ["RUNNER_TEMP"]) / "base.xml")
+          cases = root.findall(".//testcase")
+          failed = [c for c in cases if c.find("failure") is not None]
+          errors = root.findall(".//error")
+          print("BASE_COUNTS cases failures errors", len(cases), len(failed), len(errors))
+          assert (len(cases), len(failed), len(errors)) == (26, 20, 0)
+          assert all("AssertionError" in c.find("failure").text for c in failed)
+          RESULTS
+      - name: Test the final source through normal pytest
+        run: |
+          cd "$RUNNER_TEMP/head"
+          python -c 'import crawl4ai, pathlib; assert pathlib.Path(crawl4ai.__file__).resolve() == pathlib.Path.cwd() / "crawl4ai/__init__.py"; print("HEAD_PYTEST_IMPORT", crawl4ai.__file__)'
+          python -m pytest -q tests/test_markdown_protected_links.py tests/test_base_href_markdown.py tests/test_base_href_relative_links.py tests/test_markdown_generator_validation_1880.py tests/test_table_gfm_compliance.py tests/test_format_html_parser.py
+          python -m black --check --diff tests/test_markdown_protected_links.py
+          python - <<'COMPILE'
+          from pathlib import Path
+          for path in ("crawl4ai/html2text/__init__.py", "crawl4ai/markdown_generation_strategy.py", "tests/test_markdown_protected_links.py"):
+              compile(Path(path).read_bytes(), path, "exec")
+          COMPILE
+          git diff HEAD --exit-code
+      - name: Always verify source identity and tracked cleanliness
+        if: always()
+        run: |
+          test "$(git -C "$RUNNER_TEMP/head" rev-parse HEAD)" = 030556698d6a3bd855299d87fb7dd4a0b6620ba9
+          test "$(git -C "$RUNNER_TEMP/head" rev-parse HEAD^{tree})" = 8e7e8b68b29808dd38fef90749485d6832d1274f
+          test "$(git -C "$RUNNER_TEMP/base" rev-parse HEAD)" = 9b2e1e321abced7675cbb47ef5a03205c2dbc72d
+          git -C "$RUNNER_TEMP/head" diff HEAD --exit-code
+          git -C "$RUNNER_TEMP/base" diff HEAD --exit-code
